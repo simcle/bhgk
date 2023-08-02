@@ -9,15 +9,21 @@ const adamPlc = require('./modbus')
 adamPlc.connectTCP('192.168.100.121', {port: 502})
 adamPlc.setID(1);
 
-
 const client  = mqtt.connect('mqtt://m9m3ohlehyci-ifk8otj1ej1z.cedalo.dev:1883', {
     username: 'bhgk',
-    password: 'pwlan123'
+    password: 'pwlan123',
+    keepalive: 30,
+    will: {
+        topic: `status`,
+        payload: "offline",
+        qos: 0
+    }
 })
-
-client.subscribe(['level', 'valve', 'mode']);
+client.subscribe(['auto','valve', 'mode']);
+client.publish('online', '1')
 
 setInterval(() => {
+
     // 2136  Water level Thomson #5
     adamPlc.readHoldingRegisters(2135, 1, function (err, data) {
         if(err) {
@@ -25,7 +31,7 @@ setInterval(() => {
         }
         const val = data.buffer.readInt16BE(0)
         client.publish('level', `${val}`)
-        console.log('water level', val)
+        // console.log('water level', val)
     })
     // 2216  Valve Feedback Thomson #5
     adamPlc.readHoldingRegisters(2215, 1, function(err, data) {
@@ -38,6 +44,9 @@ setInterval(() => {
     })
 
     // 2314 Valve Status @ Thomson #5
+    // 0 traveling
+    // 1 full opne
+    // 2 full close
     adamPlc.readHoldingRegisters(2313, 1, function(err, data) {
         if(err) {
             console.log(err)
@@ -56,8 +65,13 @@ setInterval(() => {
         const val = data.data[0]
         client.publish('valveMode', `${val}`)
         // console.log('valve mode', val)
-
     })
+
+    // 2134 flowr Rate
+        adamPlc.readHoldingRegisters(2133, 1, function(err, data) {
+            const val = data.buffer.readInt16BE(0)
+            client.publish('flowRate', `${val}`)
+        })
 }, 500)
 
 
@@ -95,6 +109,16 @@ client.on('message', (topic, message) => {
             console.log(e.message)
         })
     }
+    if(topic == 'auto') {
+        // 2138 input debit
+        let val = JSON.parse(message.toString())
+        let debit = parseFloat(val.debit)
+        adamPlc.writeRegister(2137, debit)
+        .then(res => {
+            console.log('response', res.data)
+        })
+    }
+
 })
 
 
